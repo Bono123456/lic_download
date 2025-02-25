@@ -16,8 +16,7 @@
     <div id="output"></div>
 
     <script>
-        // Замени на свой реальный публичный ключ Яндекс.Диска
-        const FOLDER_URL = "https://disk.yandex.ru/d/hnPUoXmttgFECQ"; // ТВОЙ КЛЮЧ ЗДЕСЬ
+        const FOLDER_URL = "https://disk.yandex.ru/d/hnPUoXmttgFECQ"; // Замени на твой публичный ключ
         const API_URL = "https://cloud-api.yandex.net/v1/disk/public/resources?public_key=" + encodeURI(FOLDER_URL) + "&limit=1000";
 
         async function getFileList() {
@@ -33,8 +32,7 @@
                     throw new Error("Неверный формат ответа от Яндекс.Диска");
                 }
                 const files = data._embedded.items.filter(item => item.type === "file");
-                output.innerHTML += `Найдено ${files.length} файлов:<br>`;
-                files.forEach(file => output.innerHTML += `- ${file.name}<br>`);
+                output.innerHTML += `Найдено ${files.length} файлов.<br>`;
                 return files;
             } catch (e) {
                 output.innerHTML += `Ошибка получения списка файлов: ${e.message}<br>`;
@@ -87,7 +85,7 @@
 
             const filesToDownload = files.filter(file => {
                 for (const num of numbers) {
-                    const paddedNum = num.padStart(6, '0'); // Поддержка ведущих нулей
+                    const paddedNum = num.padStart(8, '0'); // Используем 8 цифр для соответствия файлам
                     if (file.name.startsWith(paddedNum) || file.name.startsWith("S" + num)) {
                         return true;
                     }
@@ -100,9 +98,36 @@
                 return;
             }
 
+            // Показываем найденные файлы для выбора
             output.innerHTML += `Найдено ${filesToDownload.length} файлов для скачивания:<br>`;
-            filesToDownload.forEach(file => output.innerHTML += `- ${file.name}<br>`);
-            await saveToFolder(filesToDownload);
+            filesToDownload.forEach((file, index) => {
+                output.innerHTML += `${index + 1}. ${file.name}<br>`;
+            });
+
+            const choice = prompt("Введи номера файлов для скачивания (через пробел, например, '1 2') или 'all' для всех:");
+            if (!choice) {
+                output.innerHTML += "Скачивание отменено.<br>";
+                return;
+            }
+
+            let selectedFiles = [];
+            if (choice.toLowerCase() === "all") {
+                selectedFiles = filesToDownload;
+            } else {
+                const choices = choice.split(" ").map(num => parseInt(num.trim()));
+                selectedFiles = choices
+                    .filter(index => index > 0 && index <= filesToDownload.length)
+                    .map(index => filesToDownload[index - 1]);
+            }
+
+            if (selectedFiles.length === 0) {
+                output.innerHTML += "Не выбраны файлы для скачивания.<br>";
+                return;
+            }
+
+            output.innerHTML += `Выбрано ${selectedFiles.length} файлов для скачивания:<br>`;
+            selectedFiles.forEach(file => output.innerHTML += `- ${file.name}<br>`);
+            await saveToFolder(selectedFiles);
             output.innerHTML += "Обновление завершено!<br>";
         }
 
