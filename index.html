@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Downloader</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        button { padding: 10px 20px; }
+        #output { margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Обновить файлы с Яндекс.Диска</h1>
+    <input type="text" id="fileNumbers" placeholder="Введите номера файлов, например: 295 760">
+    <button onclick="updateFiles()">Обновить файлы</button>
+    <div id="output"></div>
+
+    <script>
+        const FOLDER_URL = "https://disk.yandex.ru/d/your_public_key";
+        const API_URL = "https://cloud-api.yandex.net/v1/disk/public/resources?public_key=" + encodeURI(FOLDER_URL) + "&limit=1000";
+
+        async function getFileList() {
+            const response = await fetch(API_URL);
+            const data = await response.json();
+            return data._embedded.items.filter(item => item.type === "file");
+        }
+
+        async function saveToFolder(files) {
+            const dirHandle = await window.showDirectoryPicker();
+            const output = document.getElementById("output");
+            output.innerHTML += "Выбрана папка для сохранения.<br>";
+            const replaceExisting = confirm("Заменить существующие файлы?");
+            for (const file of files) {
+                const fileHandle = await dirHandle.getFileHandle(file.name, { create: true });
+                if (replaceExisting && await dirHandle.hasEntry(file.name)) {
+                    await dirHandle.removeEntry(file.name);
+                }
+                const writable = await fileHandle.createWritable();
+                const response = await fetch(file.file);
+                await response.body.pipeTo(writable);
+                output.innerHTML += `Сохранён: ${file.name}<br>`;
+            }
+        }
+
+        async function updateFiles() {
+            const userInput = document.getElementById("fileNumbers").value.trim();
+            if (!userInput) {
+                alert("Введите номера файлов!");
+                return;
+            }
+            const numbers = userInput.split(" ").map(num => num.trim());
+            const output = document.getElementById("output");
+            output.innerHTML = "Получение списка файлов...<br>";
+
+            const files = await getFileList();
+            const filesToDownload = files.filter(file => {
+                for (const num of numbers) {
+                    const formattedNum = num.padStart(8, '0'); // Учитываем до 8 нулей
+                    if (file.name.startsWith(formattedNum) || file.name.startsWith("S" + num)) {
+                        return true;
+                    }
+                }
+                return false;
+            });
+
+            if (filesToDownload.length === 0) {
+                output.innerHTML += "Не найдены соответствующие файлы.<br>";
+                return;
+            }
+
+            output.innerHTML += "Начинаю скачивание...<br>";
+            await saveToFolder(filesToDownload);
+            output.innerHTML += "Обновление завершено!<br>";
+        }
+
+        // Проверка поддержки API
+        if (!('showDirectoryPicker' in window)) {
+            document.getElementById("output").innerHTML = "Ваш браузер не поддерживает File System Access API. Используйте Chrome или Edge.";
+        }
+    </script>
+</body>
+</html>
