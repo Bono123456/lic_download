@@ -41,10 +41,9 @@
             }
         }
 
-        async function saveToFolder(files) {
+        async function saveToFolder(dirHandle, files) {
             const output = document.getElementById("output");
             try {
-                const dirHandle = await window.showDirectoryPicker();
                 output.innerHTML += "Выбрана папка для сохранения.<br>";
                 const replaceExisting = confirm("Заменить существующие файлы?");
                 for (const file of files) {
@@ -80,12 +79,21 @@
             const output = document.getElementById("output");
             output.innerHTML = "Получение списка файлов...<br>";
 
+            // Выбираем папку сразу после клика
+            let dirHandle;
+            try {
+                dirHandle = await window.showDirectoryPicker();
+            } catch (e) {
+                output.innerHTML += `Ошибка выбора папки: ${e.message}<br>`;
+                return;
+            }
+
             const files = await getFileList();
             if (files.length === 0) return;
 
             const filesToDownload = files.filter(file => {
                 for (const num of numbers) {
-                    const paddedNum = num.padStart(8, '0'); // Используем 8 цифр для соответствия файлам
+                    const paddedNum = num.padStart(8, '0'); // Используем 8 цифр
                     if (file.name.startsWith(paddedNum) || file.name.startsWith("S" + num)) {
                         return true;
                     }
@@ -127,7 +135,7 @@
 
             output.innerHTML += `Выбрано ${selectedFiles.length} файлов для скачивания:<br>`;
             selectedFiles.forEach(file => output.innerHTML += `- ${file.name}<br>`);
-            await saveToFolder(selectedFiles);
+            await saveToFolder(dirHandle, selectedFiles);
             output.innerHTML += "Обновление завершено!<br>";
         }
 
