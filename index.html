@@ -30,7 +30,7 @@
                 output.innerHTML += `Найдено ${files.length} файлов.<br>`;
                 return files;
             } catch (e) {
-                output.innerHTML += `Ошибка: ${e.message}<br>`;
+                output.innerHTML += `Ошибка получения списка: ${e.message}<br>`;
                 return [];
             }
         }
@@ -64,13 +64,23 @@
             output.innerHTML += "Создаю ZIP...<br>";
             const zip = new JSZip();
             for (const file of filesToDownload) {
-                const response = await fetch(file.file);
-                const blob = await response.blob();
-                zip.file(file.name, blob);
+                try {
+                    output.innerHTML += `Скачиваю ${file.name}...<br>`;
+                    const response = await fetch(file.file);
+                    if (!response.ok) throw new Error(`Не удалось скачать ${file.name}: ${response.status}`);
+                    const blob = await response.blob();
+                    zip.file(file.name, blob);
+                    output.innerHTML += `${file.name} добавлен в ZIP.<br>`;
+                } catch (e) {
+                    output.innerHTML += `Ошибка: ${e.message}<br>`;
+                    return;
+                }
             }
+
             zip.file("install.bat", `@echo off\nxcopy *.* "C:\\ProgramData\\InfoStroy\\A0\\A0Win1\\Bin" /Y\necho Файлы скопированы!\npause`);
 
-            zip.generateAsync({ type: "blob" }).then(content => {
+            try {
+                const content = await zip.generateAsync({ type: "blob" });
                 const url = window.URL.createObjectURL(content);
                 const a = document.createElement("a");
                 a.href = url;
@@ -80,7 +90,9 @@
                 document.body.removeChild(a);
                 window.URL.revokeObjectURL(url);
                 output.innerHTML += "ZIP скачан! Распакуйте и запустите install.bat от имени администратора.<br>";
-            });
+            } catch (e) {
+                output.innerHTML += `Ошибка создания ZIP: ${e.message}<br>`;
+            }
         }
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
