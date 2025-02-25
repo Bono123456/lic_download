@@ -16,29 +16,59 @@
     <div id="output"></div>
 
     <script>
-        const FOLDER_URL = "https://disk.yandex.ru/d/your_public_key";
+        // Замени на свой реальный публичный ключ Яндекс.Диска
+        const FOLDER_URL = "https://disk.yandex.ru/d/hnPUoXmttgFECQ"; // ТВОЙ КЛЮЧ ЗДЕСЬ
         const API_URL = "https://cloud-api.yandex.net/v1/disk/public/resources?public_key=" + encodeURI(FOLDER_URL) + "&limit=1000";
 
         async function getFileList() {
-            const response = await fetch(API_URL);
-            const data = await response.json();
-            return data._embedded.items.filter(item => item.type === "file");
+            const output = document.getElementById("output");
+            output.innerHTML += "Получение списка файлов с Яндекс.Диска...<br>";
+            try {
+                const response = await fetch(API_URL);
+                if (!response.ok) {
+                    throw new Error(`Ошибка HTTP: ${response.status} - ${response.statusText}`);
+                }
+                const data = await response.json();
+                if (!data._embedded || !data._embedded.items) {
+                    throw new Error("Неверный формат ответа от Яндекс.Диска");
+                }
+                const files = data._embedded.items.filter(item => item.type === "file");
+                output.innerHTML += `Найдено ${files.length} файлов:<br>`;
+                files.forEach(file => output.innerHTML += `- ${file.name}<br>`);
+                return files;
+            } catch (e) {
+                output.innerHTML += `Ошибка получения списка файлов: ${e.message}<br>`;
+                console.error("Детали ошибки:", e);
+                return [];
+            }
         }
 
         async function saveToFolder(files) {
-            const dirHandle = await window.showDirectoryPicker();
             const output = document.getElementById("output");
-            output.innerHTML += "Выбрана папка для сохранения.<br>";
-            const replaceExisting = confirm("Заменить существующие файлы?");
-            for (const file of files) {
-                const fileHandle = await dirHandle.getFileHandle(file.name, { create: true });
-                if (replaceExisting && await dirHandle.hasEntry(file.name)) {
-                    await dirHandle.removeEntry(file.name);
+            try {
+                const dirHandle = await window.showDirectoryPicker();
+                output.innerHTML += "Выбрана папка для сохранения.<br>";
+                const replaceExisting = confirm("Заменить существующие файлы?");
+                for (const file of files) {
+                    const fileHandle = await dirHandle.getFileHandle(file.name, { create: true });
+                    if (replaceExisting) {
+                        try {
+                            await dirHandle.removeEntry(file.name);
+                            output.innerHTML += `Удалён существующий ${file.name}<br>`;
+                        } catch (e) {
+                            // Игнорируем, если файла не было
+                        }
+                    }
+                    const writable = await fileHandle.createWritable();
+                    const response = await fetch(file.file);
+                    if (!response.ok) {
+                        throw new Error(`Ошибка скачивания ${file.name}: ${response.status}`);
+                    }
+                    await response.body.pipeTo(writable);
+                    output.innerHTML += `Сохранён: ${file.name}<br>`;
                 }
-                const writable = await fileHandle.createWritable();
-                const response = await fetch(file.file);
-                await response.body.pipeTo(writable);
-                output.innerHTML += `Сохранён: ${file.name}<br>`;
+            } catch (e) {
+                output.innerHTML += `Ошибка сохранения: ${e.message}<br>`;
             }
         }
 
@@ -53,10 +83,12 @@
             output.innerHTML = "Получение списка файлов...<br>";
 
             const files = await getFileList();
+            if (files.length === 0) return;
+
             const filesToDownload = files.filter(file => {
                 for (const num of numbers) {
-                    const formattedNum = num.padStart(8, '0'); // Учитываем до 8 нулей
-                    if (file.name.startsWith(formattedNum) || file.name.startsWith("S" + num)) {
+                    const paddedNum = num.padStart(6, '0'); // Поддержка ведущих нулей
+                    if (file.name.startsWith(paddedNum) || file.name.startsWith("S" + num)) {
                         return true;
                     }
                 }
@@ -64,16 +96,16 @@
             });
 
             if (filesToDownload.length === 0) {
-                output.innerHTML += "Не найдены соответствующие файлы.<br>";
+                output.innerHTML += "Не найдены соответствующие файлы для введённых номеров.<br>";
                 return;
             }
 
-            output.innerHTML += "Начинаю скачивание...<br>";
+            output.innerHTML += `Найдено ${filesToDownload.length} файлов для скачивания:<br>`;
+            filesToDownload.forEach(file => output.innerHTML += `- ${file.name}<br>`);
             await saveToFolder(filesToDownload);
             output.innerHTML += "Обновление завершено!<br>";
         }
 
-        // Проверка поддержки API
         if (!('showDirectoryPicker' in window)) {
             document.getElementById("output").innerHTML = "Ваш браузер не поддерживает File System Access API. Используйте Chrome или Edge.";
         }
