@@ -12,88 +12,43 @@
 <body>
     <h1>Обновить файлы с Яндекс.Диска</h1>
     <input type="text" id="fileNumbers" placeholder="Введите номера файлов, например: 295 760">
-    <button onclick="updateFiles()">Обновить файлы</button>
+    <button onclick="generateDownload()">Скачать ZIP</button>
     <div id="output"></div>
 
     <script>
-        const FOLDER_URL = "https://disk.yandex.ru/d/hnPUoXmttgFECQ"; // Замени на твой публичный ключ
+        const FOLDER_URL = "https://disk.yandex.ru/d/hnPUoXmttgFECQ"; // Твой ключ
         const API_URL = "https://cloud-api.yandex.net/v1/disk/public/resources?public_key=" + encodeURI(FOLDER_URL) + "&limit=1000";
 
         async function getFileList() {
             const output = document.getElementById("output");
-            output.innerHTML += "Получение списка файлов с Яндекс.Диска...<br>";
+            output.innerHTML += "Получение списка файлов...<br>";
             try {
                 const response = await fetch(API_URL);
-                if (!response.ok) {
-                    throw new Error(`Ошибка HTTP: ${response.status} - ${response.statusText}`);
-                }
+                if (!response.ok) throw new Error(`HTTP ошибка: ${response.status}`);
                 const data = await response.json();
-                if (!data._embedded || !data._embedded.items) {
-                    throw new Error("Неверный формат ответа от Яндекс.Диска");
-                }
                 const files = data._embedded.items.filter(item => item.type === "file");
                 output.innerHTML += `Найдено ${files.length} файлов.<br>`;
                 return files;
             } catch (e) {
-                output.innerHTML += `Ошибка получения списка файлов: ${e.message}<br>`;
-                console.error("Детали ошибки:", e);
+                output.innerHTML += `Ошибка: ${e.message}<br>`;
                 return [];
             }
         }
 
-        async function saveToFolder(dirHandle, files) {
-            const output = document.getElementById("output");
-            try {
-                output.innerHTML += "Выбрана папка для сохранения.<br>";
-                const replaceExisting = confirm("Заменить существующие файлы?");
-                for (const file of files) {
-                    const fileHandle = await dirHandle.getFileHandle(file.name, { create: true });
-                    if (replaceExisting) {
-                        try {
-                            await dirHandle.removeEntry(file.name);
-                            output.innerHTML += `Удалён существующий ${file.name}<br>`;
-                        } catch (e) {
-                            // Игнорируем, если файла не было
-                        }
-                    }
-                    const writable = await fileHandle.createWritable();
-                    const response = await fetch(file.file);
-                    if (!response.ok) {
-                        throw new Error(`Ошибка скачивания ${file.name}: ${response.status}`);
-                    }
-                    await response.body.pipeTo(writable);
-                    output.innerHTML += `Сохранён: ${file.name}<br>`;
-                }
-            } catch (e) {
-                output.innerHTML += `Ошибка сохранения: ${e.message}<br>`;
-            }
-        }
-
-        async function updateFiles() {
-            const userInput = document.getElementById("fileNumbers").value.trim();
-            if (!userInput) {
+        async function generateDownload() {
+            const numbers = document.getElementById("fileNumbers").value.trim().split(" ").map(num => num.trim());
+            if (!numbers.length) {
                 alert("Введите номера файлов!");
                 return;
             }
-            const numbers = userInput.split(" ").map(num => num.trim());
+
             const output = document.getElementById("output");
             output.innerHTML = "Получение списка файлов...<br>";
 
-            // Выбираем папку сразу после клика
-            let dirHandle;
-            try {
-                dirHandle = await window.showDirectoryPicker();
-            } catch (e) {
-                output.innerHTML += `Ошибка выбора папки: ${e.message}<br>`;
-                return;
-            }
-
             const files = await getFileList();
-            if (files.length === 0) return;
-
             const filesToDownload = files.filter(file => {
                 for (const num of numbers) {
-                    const paddedNum = num.padStart(8, '0'); // Используем 8 цифр
+                    const paddedNum = num.padStart(8, '0');
                     if (file.name.startsWith(paddedNum) || file.name.startsWith("S" + num)) {
                         return true;
                     }
@@ -102,46 +57,32 @@
             });
 
             if (filesToDownload.length === 0) {
-                output.innerHTML += "Не найдены соответствующие файлы для введённых номеров.<br>";
+                output.innerHTML += "Файлы не найдены.<br>";
                 return;
             }
 
-            // Показываем найденные файлы для выбора
-            output.innerHTML += `Найдено ${filesToDownload.length} файлов для скачивания:<br>`;
-            filesToDownload.forEach((file, index) => {
-                output.innerHTML += `${index + 1}. ${file.name}<br>`;
+            output.innerHTML += "Создаю ZIP...<br>";
+            const zip = new JSZip();
+            for (const file of filesToDownload) {
+                const response = await fetch(file.file);
+                const blob = await response.blob();
+                zip.file(file.name, blob);
+            }
+            zip.file("install.bat", `@echo off\nxcopy *.* "C:\\ProgramData\\InfoStroy\\A0\\A0Win1\\Bin" /Y\necho Файлы скопированы!\npause`);
+
+            zip.generateAsync({ type: "blob" }).then(content => {
+                const url = window.URL.createObjectURL(content);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "downloader.zip";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                output.innerHTML += "ZIP скачан! Распакуйте и запустите install.bat.<br>";
             });
-
-            const choice = prompt("Введи номера файлов для скачивания (через пробел, например, '1 2') или 'all' для всех:");
-            if (!choice) {
-                output.innerHTML += "Скачивание отменено.<br>";
-                return;
-            }
-
-            let selectedFiles = [];
-            if (choice.toLowerCase() === "all") {
-                selectedFiles = filesToDownload;
-            } else {
-                const choices = choice.split(" ").map(num => parseInt(num.trim()));
-                selectedFiles = choices
-                    .filter(index => index > 0 && index <= filesToDownload.length)
-                    .map(index => filesToDownload[index - 1]);
-            }
-
-            if (selectedFiles.length === 0) {
-                output.innerHTML += "Не выбраны файлы для скачивания.<br>";
-                return;
-            }
-
-            output.innerHTML += `Выбрано ${selectedFiles.length} файлов для скачивания:<br>`;
-            selectedFiles.forEach(file => output.innerHTML += `- ${file.name}<br>`);
-            await saveToFolder(dirHandle, selectedFiles);
-            output.innerHTML += "Обновление завершено!<br>";
-        }
-
-        if (!('showDirectoryPicker' in window)) {
-            document.getElementById("output").innerHTML = "Ваш браузер не поддерживает File System Access API. Используйте Chrome или Edge.";
         }
     </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </body>
 </html>
